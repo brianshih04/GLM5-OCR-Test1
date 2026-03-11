@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.env
+venv/
+env/
+.venv/
+build/
+dist/
+*.spec
+models/*.gguf
+bin/*.dll
+fonts/*.ttf
+fonts/*.otf
+logs/
+output_pdf/
+test_images/

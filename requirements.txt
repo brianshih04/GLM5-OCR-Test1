@@ -5,8 +5,8 @@
 PyQt6>=6.6.0
 PyQt-Fluent-Widgets>=1.5.0
 
-# AI 推理引擎 - 使用 Ollama GLM-OCR
-ollama>=0.1.0
+# AI 推理引擎 - 直接載入 GGUF 模型（需要 C compiler）
+llama-cpp-python>=0.2.0
 
 # 極速影像解碼（選用，加速 JPEG 處理）
 PyTurboJPEG>=1.7.0

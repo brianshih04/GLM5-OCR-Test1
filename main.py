@@ -22,7 +22,7 @@ from qfluentwidgets import (
 )
 
 from folder_watcher import FolderWatcher
-from ocr_engine import OCREngine
+from ocr_engine import OCREngine, detect_gpu, MODE_LOCAL, MODE_CLOUD
 from pdf_builder import PDFBuilder
 
 # 設定日誌
@@ -34,9 +34,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # 預設設定
-DEFAULT_MODEL_NAME = "glm-ocr:q8_0"
 DEFAULT_FONT_NAME = "NotoSansTC-VariableFont_wght.ttf"
 SUPPORTED_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif'}
+
+# 預設模型路徑
+DEFAULT_MODEL_DIR = Path(__file__).parent / 'models'
+DEFAULT_MODEL_FILE = 'GLM-OCR-Q8_0.gguf'
+DEFAULT_MMPROJ_FILE = 'mmproj-GLM-OCR-Q8_0.gguf'
 
 
 def get_default_font_path() -> Path:
@@ -57,27 +61,48 @@ def get_default_font_path() -> Path:
     return default_path  # 回傳預設路徑（可能不存在）
 
 
-def init_ocr_and_pdf_engines(model_name: str = DEFAULT_MODEL_NAME,
+def get_default_model_path() -> Path:
+    """取得預設主模型路徑"""
+    return DEFAULT_MODEL_DIR / DEFAULT_MODEL_FILE
+
+
+def get_default_mmproj_path() -> Path:
+    """取得預設視覺投影模型路徑"""
+    return DEFAULT_MODEL_DIR / DEFAULT_MMPROJ_FILE
+
+
+def init_ocr_and_pdf_engines(mode: str = MODE_LOCAL,
+                              model_path: Path = None,
+                              mmproj_path: Path = None,
                               font_path: Path = None,
-                              dpi: int = 150):
+                              n_gpu_layers: int = None,
+                              api_key: str = None):
     """
     初始化 OCR 引擎和 PDF 建構器
 
     Args:
-        model_name: Ollama 模型名稱
+        mode: 推理模式 ('local' 或 'cloud')
+        model_path: [本地] 主模型 GGUF 路徑
+        mmproj_path: [本地] 視覺投影模型 GGUF 路徑
         font_path: 字型檔案路徑
-        dpi: 影像 DPI
+        n_gpu_layers: [本地] GPU 層數
+        api_key: [雲端] ZhipuAI API Key
 
     Returns:
         (ocr_engine, pdf_builder) 或 (None, None) 如果初始化失敗
     """
     try:
-        # 使用預設字型路徑（如果未指定）
         if font_path is None:
             font_path = get_default_font_path()
 
         # 初始化 OCR 引擎
-        ocr_engine = OCREngine(model_name=model_name)
+        ocr_engine = OCREngine(
+            mode=mode,
+            model_path=model_path,
+            mmproj_path=mmproj_path,
+            n_gpu_layers=n_gpu_layers,
+            api_key=api_key,
+        )
 
         # 初始化 PDF 建構器
         pdf_builder = PDFBuilder(font_path)
@@ -374,12 +399,12 @@ class ConversionInterface(QWidget):
 
         # 初始化 OCR 引擎和 PDF 建構器
         if self.ocr_engine is None or self.pdf_builder is None:
-            self.init_engines(settings['model_name'], settings['font_path'])
+            self.init_engines(settings)
 
         if self.ocr_engine is None or not self.ocr_engine.is_ready():
             InfoBar.error(
                 title="引擎未就緒",
-                content="OCR 引擎未初始化，請檢查 Ollama 服務和模型設定",
+                content="OCR 引擎未初始化，請檢查 GGUF 模型檔案是否存在",
                 parent=self.parent_window,
                 position=InfoBarPosition.TOP
             )
@@ -420,17 +445,24 @@ class ConversionInterface(QWidget):
             self.conversion_thread.cancel()
             self.status_label.setText("正在取消...")
 
-    def init_engines(self, model_name: str = None, font_path: Path = None):
+    def init_engines(self, settings: dict = None):
         """初始化 OCR 引擎和 PDF 建構器"""
-        model_name = model_name or DEFAULT_MODEL_NAME
+        if settings is None:
+            settings = self._get_settings()
+
         self.ocr_engine, self.pdf_builder = init_ocr_and_pdf_engines(
-            model_name=model_name, font_path=font_path
+            mode=settings.get('mode', MODE_LOCAL),
+            model_path=settings.get('model_path'),
+            mmproj_path=settings.get('mmproj_path'),
+            font_path=settings.get('font_path'),
+            n_gpu_layers=settings.get('n_gpu_layers'),
+            api_key=settings.get('api_key'),
         )
 
         if self.ocr_engine is None:
             InfoBar.error(
                 title="初始化失敗",
-                content="OCR 引擎初始化失敗，請檢查 Ollama 服務和模型",
+                content="OCR 引擎初始化失敗",
                 parent=self.parent_window,
                 position=InfoBarPosition.TOP
             )
@@ -465,18 +497,31 @@ class ConversionInterface(QWidget):
     def _get_settings(self) -> dict:
         """從設定介面取得目前設定"""
         settings = {
-            'model_name': DEFAULT_MODEL_NAME,
+            'mode': MODE_LOCAL,
+            'model_path': get_default_model_path(),
+            'mmproj_path': get_default_mmproj_path(),
             'font_path': get_default_font_path(),
             'dpi': 150,
+            'n_gpu_layers': None,  # None = 自動偵測
+            'api_key': None,
         }
 
         # 嘗試從 MainWindow 的設定介面取得值
         if self.parent_window and hasattr(self.parent_window, 'settings_interface'):
             si = self.parent_window.settings_interface
             try:
-                model_name = si.model_combo.currentText().strip()
-                if model_name:
-                    settings['model_name'] = model_name
+                # 模式
+                if si.mode_combo.currentIndex() == 1:
+                    settings['mode'] = MODE_CLOUD
+
+                # 本地模型路徑
+                model_text = si.model_path_edit.text().strip()
+                if model_text:
+                    settings['model_path'] = Path(model_text)
+
+                mmproj_text = si.mmproj_path_edit.text().strip()
+                if mmproj_text:
+                    settings['mmproj_path'] = Path(mmproj_text)
 
                 font_text = si.font_path_edit.text().strip()
                 if font_text:
@@ -485,6 +530,16 @@ class ConversionInterface(QWidget):
                 dpi_text = si.dpi_combo.currentText().strip()
                 if dpi_text.isdigit():
                     settings['dpi'] = int(dpi_text)
+
+                if si.gpu_switch.isChecked():
+                    settings['n_gpu_layers'] = None  # 自動偵測
+                else:
+                    settings['n_gpu_layers'] = 0  # 強制 CPU
+
+                # API Key
+                api_text = si.api_key_edit.text().strip()
+                if api_text:
+                    settings['api_key'] = api_text
 
             except Exception as e:
                 logger.warning(f"讀取設定失敗，使用預設值: {e}")
@@ -639,20 +694,43 @@ class HotFolderInterface(QWidget):
 
     def init_engines(self):
         """初始化 OCR 引擎和 PDF 建構器"""
-        # 從設定介面取得模型名稱
-        model_name = DEFAULT_MODEL_NAME
+        mode = MODE_LOCAL
+        model_path = get_default_model_path()
+        mmproj_path = get_default_mmproj_path()
+        n_gpu_layers = None  # 自動偵測
+        api_key = None
+
         if self.parent_window and hasattr(self.parent_window, 'settings_interface'):
             try:
-                model_name = self.parent_window.settings_interface.model_combo.currentText().strip() or DEFAULT_MODEL_NAME
+                si = self.parent_window.settings_interface
+                # 模式
+                if si.mode_combo.currentIndex() == 1:
+                    mode = MODE_CLOUD
+                # 本地設定
+                mt = si.model_path_edit.text().strip()
+                if mt:
+                    model_path = Path(mt)
+                mmt = si.mmproj_path_edit.text().strip()
+                if mmt:
+                    mmproj_path = Path(mmt)
+                if not si.gpu_switch.isChecked():
+                    n_gpu_layers = 0
+                # API Key
+                akt = si.api_key_edit.text().strip()
+                if akt:
+                    api_key = akt
             except Exception:
                 pass
 
-        self.ocr_engine, self.pdf_builder = init_ocr_and_pdf_engines(model_name=model_name)
+        self.ocr_engine, self.pdf_builder = init_ocr_and_pdf_engines(
+            mode=mode, model_path=model_path, mmproj_path=mmproj_path,
+            n_gpu_layers=n_gpu_layers, api_key=api_key,
+        )
 
         if self.ocr_engine is None:
             InfoBar.error(
                 title="初始化失敗",
-                content="OCR 引擎初始化失敗，請檢查 Ollama 服務和模型",
+                content="OCR 引擎初始化失敗",
                 parent=self.parent_window,
                 position=InfoBarPosition.TOP
             )
@@ -714,31 +792,100 @@ class SettingsInterface(QWidget):
         self.title_label = SubtitleLabel("設定")
         layout.addWidget(self.title_label)
 
-        # --- Ollama 模型設定 ---
-        layout.addWidget(StrongBodyLabel("Ollama 模型"))
+        # --- 推理模式選擇 ---
+        layout.addWidget(StrongBodyLabel("推理模式"))
 
+        mode_layout = QHBoxLayout()
+        mode_layout.addWidget(BodyLabel("OCR 引擎:"))
+        self.mode_combo = ComboBox()
+        self.mode_combo.addItems(["本地 GGUF 模型", "ZhipuAI 雲端 API (z.ai)"])
+        self.mode_combo.setCurrentIndex(0)
+        self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
+        mode_layout.addWidget(self.mode_combo, stretch=1)
+        layout.addLayout(mode_layout)
+
+        # --- ZhipuAI 雲端 API 設定 ---
+        self.cloud_label = StrongBodyLabel("ZhipuAI API 設定")
+        layout.addWidget(self.cloud_label)
+
+        api_key_layout = QHBoxLayout()
+        api_key_layout.addWidget(BodyLabel("API Key:"))
+        self.api_key_edit = LineEdit()
+        self.api_key_edit.setText("835c83b3325e45bbb76f8b23e94818bd.IBswJZRksJQoTRUv")
+        self.api_key_edit.setEchoMode(LineEdit.EchoMode.Password)
+        api_key_layout.addWidget(self.api_key_edit, stretch=1)
+
+        self.show_key_btn = PushButton("顯示")
+        self.show_key_btn.clicked.connect(self.toggle_api_key_visibility)
+        api_key_layout.addWidget(self.show_key_btn)
+        self.api_key_layout_widget = QWidget()
+        self.api_key_layout_widget.setLayout(api_key_layout)
+        layout.addWidget(self.api_key_layout_widget)
+
+        # 預設隱藏雲端設定
+        self.cloud_label.hide()
+        self.api_key_layout_widget.hide()
+
+        # --- GGUF 模型設定 ---
+        self.local_label = StrongBodyLabel("GLM-OCR GGUF 模型")
+        layout.addWidget(self.local_label)
+
+        # 主模型路徑
         model_layout = QHBoxLayout()
-        model_layout.addWidget(BodyLabel("模型名稱:"))
-        self.model_combo = ComboBox()
-        self.model_combo.addItems([
-            "glm-ocr:q8_0",
-            "glm-ocr:q4_k_m",
-            "glm-ocr:q4_0",
-        ])
-        self.model_combo.setCurrentIndex(0)
-        self.model_combo.setEditable(True)
-        model_layout.addWidget(self.model_combo, stretch=1)
-        layout.addLayout(model_layout)
+        model_layout.addWidget(BodyLabel("主模型 (.gguf):"))
+        self.model_path_edit = LineEdit()
+        self.model_path_edit.setText(str(get_default_model_path()))
+        model_layout.addWidget(self.model_path_edit, stretch=1)
+        self.browse_model_btn = PushButton("瀏覽")
+        self.browse_model_btn.clicked.connect(self.browse_model)
+        model_layout.addWidget(self.browse_model_btn)
+        self.model_layout_widget = QWidget()
+        self.model_layout_widget.setLayout(model_layout)
+        layout.addWidget(self.model_layout_widget)
 
-        # Ollama 狀態檢查
+        # 視覺投影模型路徑
+        mmproj_layout = QHBoxLayout()
+        mmproj_layout.addWidget(BodyLabel("視覺投影 (.gguf):"))
+        self.mmproj_path_edit = LineEdit()
+        self.mmproj_path_edit.setText(str(get_default_mmproj_path()))
+        mmproj_layout.addWidget(self.mmproj_path_edit, stretch=1)
+        self.browse_mmproj_btn = PushButton("瀏覽")
+        self.browse_mmproj_btn.clicked.connect(self.browse_mmproj)
+        mmproj_layout.addWidget(self.browse_mmproj_btn)
+        self.mmproj_layout_widget = QWidget()
+        self.mmproj_layout_widget.setLayout(mmproj_layout)
+        layout.addWidget(self.mmproj_layout_widget)
+
+        # 模型狀態檢查
         status_layout = QHBoxLayout()
-        self.check_status_btn = PushButton("檢查 Ollama 狀態")
-        self.check_status_btn.clicked.connect(self.check_ollama_status)
+        self.check_status_btn = PushButton("檢查模型狀態")
+        self.check_status_btn.clicked.connect(self.check_model_status)
         status_layout.addWidget(self.check_status_btn)
 
-        self.ollama_status_label = BodyLabel("")
-        status_layout.addWidget(self.ollama_status_label, stretch=1)
-        layout.addLayout(status_layout)
+        self.model_status_label = BodyLabel("")
+        status_layout.addWidget(self.model_status_label, stretch=1)
+        self.status_layout_widget = QWidget()
+        self.status_layout_widget.setLayout(status_layout)
+        layout.addWidget(self.status_layout_widget)
+
+        # --- GPU 設定 ---
+        self.gpu_label = StrongBodyLabel("GPU 設定")
+        layout.addWidget(self.gpu_label)
+
+        gpu_layout = QHBoxLayout()
+        gpu_layout.addWidget(BodyLabel("GPU 加速 (自動偵測):"))
+        self.gpu_switch = SwitchButton()
+        gpu_layout.addWidget(self.gpu_switch)
+
+        # 自動偵測 GPU
+        gpu_info = detect_gpu()
+        self.gpu_status_label = BodyLabel(gpu_info['message'])
+        gpu_layout.addWidget(self.gpu_status_label, stretch=1)
+        self.gpu_switch.setChecked(gpu_info['available'])
+
+        self.gpu_layout_widget = QWidget()
+        self.gpu_layout_widget.setLayout(gpu_layout)
+        layout.addWidget(self.gpu_layout_widget)
 
         # --- 字型設定 ---
         layout.addWidget(StrongBodyLabel("字型設定"))
@@ -768,6 +915,53 @@ class SettingsInterface(QWidget):
         # 填充底部空間
         layout.addStretch()
 
+    def on_mode_changed(self, index):
+        """切換推理模式時更新 UI"""
+        is_cloud = (index == 1)
+
+        # 雲端設定
+        self.cloud_label.setVisible(is_cloud)
+        self.api_key_layout_widget.setVisible(is_cloud)
+
+        # 本地設定
+        self.local_label.setVisible(not is_cloud)
+        self.model_layout_widget.setVisible(not is_cloud)
+        self.mmproj_layout_widget.setVisible(not is_cloud)
+        self.status_layout_widget.setVisible(not is_cloud)
+        self.gpu_label.setVisible(not is_cloud)
+        self.gpu_layout_widget.setVisible(not is_cloud)
+
+    def toggle_api_key_visibility(self):
+        """切換 API Key 顯示/隱藏"""
+        if self.api_key_edit.echoMode() == LineEdit.EchoMode.Password:
+            self.api_key_edit.setEchoMode(LineEdit.EchoMode.Normal)
+            self.show_key_btn.setText("隱藏")
+        else:
+            self.api_key_edit.setEchoMode(LineEdit.EchoMode.Password)
+            self.show_key_btn.setText("顯示")
+
+    def browse_model(self):
+        """瀏覽主模型 GGUF 檔案"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "選擇主模型 GGUF 檔案",
+            str(DEFAULT_MODEL_DIR),
+            "GGUF 模型 (*.gguf);;所有檔案 (*)"
+        )
+        if file_path:
+            self.model_path_edit.setText(file_path)
+
+    def browse_mmproj(self):
+        """瀏覽視覺投影 GGUF 檔案"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "選擇視覺投影 GGUF 檔案",
+            str(DEFAULT_MODEL_DIR),
+            "GGUF 模型 (*.gguf);;所有檔案 (*)"
+        )
+        if file_path:
+            self.mmproj_path_edit.setText(file_path)
+
     def browse_font(self):
         """瀏覽字型檔案"""
         font_file, _ = QFileDialog.getOpenFileName(
@@ -779,31 +973,64 @@ class SettingsInterface(QWidget):
         if font_file:
             self.font_path_edit.setText(font_file)
 
-    def check_ollama_status(self):
-        """檢查 Ollama 服務狀態"""
-        model_name = self.model_combo.currentText().strip() or DEFAULT_MODEL_NAME
-        engine = OCREngine(model_name=model_name)
-        status = engine.check_service_status()
-        self.ollama_status_label.setText(status['message'])
+    def check_model_status(self):
+        """檢查模型檔案狀態"""
+        # 如果是雲端模式
+        if self.mode_combo.currentIndex() == 1:
+            api_key = self.api_key_edit.text().strip()
+            if api_key:
+                msg = f"✓ 雲端 API 模式（API Key 已設定）"
+                self.model_status_label.setText(msg)
+                InfoBar.success(
+                    title="API 就緒",
+                    content=msg,
+                    parent=self.parent_window,
+                    position=InfoBarPosition.TOP
+                )
+            else:
+                msg = "✗ API Key 未設定"
+                self.model_status_label.setText(msg)
+                InfoBar.error(
+                    title="缺少 API Key",
+                    content="請輸入 ZhipuAI API Key",
+                    parent=self.parent_window,
+                    position=InfoBarPosition.TOP
+                )
+            return
 
-        if status['service_available'] and status['model_available']:
+        # 本地模式
+        model_path = Path(self.model_path_edit.text().strip()) if self.model_path_edit.text().strip() else get_default_model_path()
+        mmproj_path = Path(self.mmproj_path_edit.text().strip()) if self.mmproj_path_edit.text().strip() else get_default_mmproj_path()
+
+        model_exists = model_path.exists()
+        mmproj_exists = mmproj_path.exists()
+
+        if model_exists and mmproj_exists:
+            model_size = model_path.stat().st_size / (1024 * 1024)
+            mmproj_size = mmproj_path.stat().st_size / (1024 * 1024)
+            msg = f"✓ 模型就緒 ({model_path.name}: {model_size:.0f}MB, {mmproj_path.name}: {mmproj_size:.0f}MB)"
+            self.model_status_label.setText(msg)
             InfoBar.success(
-                title="連線成功",
-                content=status['message'],
+                title="模型就緒",
+                content=msg,
                 parent=self.parent_window,
                 position=InfoBarPosition.TOP
             )
-        elif status['service_available']:
-            InfoBar.warning(
-                title="模型未安裝",
-                content=status['message'],
+        elif not model_exists:
+            msg = f"✗ 主模型不存在: {model_path}"
+            self.model_status_label.setText(msg)
+            InfoBar.error(
+                title="模型缺失",
+                content=f"請從 HuggingFace 下載: {DEFAULT_MODEL_FILE}",
                 parent=self.parent_window,
                 position=InfoBarPosition.TOP
             )
         else:
+            msg = f"✗ 視覺投影模型不存在: {mmproj_path}"
+            self.model_status_label.setText(msg)
             InfoBar.error(
-                title="連線失敗",
-                content=status['message'],
+                title="模型缺失",
+                content=f"請從 HuggingFace 下載: {DEFAULT_MMPROJ_FILE}",
                 parent=self.parent_window,
                 position=InfoBarPosition.TOP
             )

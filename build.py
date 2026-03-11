@@ -26,6 +26,8 @@ def build():
     if not fonts_path.exists():
         print(f"警告：fonts 目錄不存在，請確保字型檔案已放置於 {fonts_path}")
 
+    models_path = project_root / 'models'
+
     # PyInstaller 參數
     pyinstaller_args = [
         'main.py',
@@ -37,9 +39,10 @@ def build():
         # 添加資料檔案
         f'--add-data={bin_path};bin' if bin_path.exists() else '',
         f'--add-data={fonts_path};fonts' if fonts_path.exists() else '',
+        f'--add-data={models_path};models' if models_path.exists() else '',
 
         # 隱藏導入
-        '--hidden-import=ollama',
+        '--hidden-import=llama_cpp',
         '--hidden-import=turbojpeg',
         '--hidden-import=watchdog',
         '--hidden-import=PyQt6.QtCore',
@@ -51,7 +54,6 @@ def build():
         '--exclude-module=tkinter',
         '--exclude-module=matplotlib',
         '--exclude-module=IPython',
-        '--exclude-module=numpy',
 
         # 圖標（如果有的話）
         # '--icon=assets/icon.ico',
