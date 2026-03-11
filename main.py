@@ -71,7 +71,7 @@ def get_default_mmproj_path() -> Path:
     return DEFAULT_MODEL_DIR / DEFAULT_MMPROJ_FILE
 
 
-def init_ocr_and_pdf_engines(mode: str = MODE_LOCAL,
+def init_ocr_and_pdf_engines(mode: str = MODE_CLOUD,
                               model_path: Path = None,
                               mmproj_path: Path = None,
                               font_path: Path = None,
@@ -497,7 +497,7 @@ class ConversionInterface(QWidget):
     def _get_settings(self) -> dict:
         """從設定介面取得目前設定"""
         settings = {
-            'mode': MODE_LOCAL,
+            'mode': MODE_CLOUD,
             'model_path': get_default_model_path(),
             'mmproj_path': get_default_mmproj_path(),
             'font_path': get_default_font_path(),
@@ -694,7 +694,7 @@ class HotFolderInterface(QWidget):
 
     def init_engines(self):
         """初始化 OCR 引擎和 PDF 建構器"""
-        mode = MODE_LOCAL
+        mode = MODE_CLOUD
         model_path = get_default_model_path()
         mmproj_path = get_default_mmproj_path()
         n_gpu_layers = None  # 自動偵測
@@ -799,7 +799,7 @@ class SettingsInterface(QWidget):
         mode_layout.addWidget(BodyLabel("OCR 引擎:"))
         self.mode_combo = ComboBox()
         self.mode_combo.addItems(["本地 GGUF 模型", "ZhipuAI 雲端 API (z.ai)"])
-        self.mode_combo.setCurrentIndex(0)
+        self.mode_combo.setCurrentIndex(1)
         self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
         mode_layout.addWidget(self.mode_combo, stretch=1)
         layout.addLayout(mode_layout)
@@ -821,10 +821,6 @@ class SettingsInterface(QWidget):
         self.api_key_layout_widget = QWidget()
         self.api_key_layout_widget.setLayout(api_key_layout)
         layout.addWidget(self.api_key_layout_widget)
-
-        # 預設隱藏雲端設定
-        self.cloud_label.hide()
-        self.api_key_layout_widget.hide()
 
         # --- GGUF 模型設定 ---
         self.local_label = StrongBodyLabel("GLM-OCR GGUF 模型")
@@ -914,6 +910,9 @@ class SettingsInterface(QWidget):
 
         # 填充底部空間
         layout.addStretch()
+
+        # 根據預設模式初始化元件可見性
+        self.on_mode_changed(self.mode_combo.currentIndex())
 
     def on_mode_changed(self, index):
         """切換推理模式時更新 UI"""

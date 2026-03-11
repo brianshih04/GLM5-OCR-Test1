@@ -165,7 +165,7 @@ class OCREngine:
 
     def __init__(
         self,
-        mode: str = MODE_LOCAL,
+        mode: str = MODE_CLOUD,
         # 本地模式參數
         model_path: Optional[Path] = None,
         mmproj_path: Optional[Path] = None,
