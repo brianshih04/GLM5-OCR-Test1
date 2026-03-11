@@ -8,7 +8,7 @@ PyQt-Fluent-Widgets>=1.5.0
 # AI 推理引擎 - 使用 Ollama GLM-OCR
 ollama>=0.1.0
 
-# 極速影像解碼
+# 極速影像解碼（選用，加速 JPEG 處理）
 PyTurboJPEG>=1.7.0
 
 # 影像處理
@@ -22,6 +22,3 @@ PyMuPDF>=1.23.0
 
 # 打包工具
 pyinstaller>=6.0.0
-
-# 其他工具
-numpy>=1.24.0
