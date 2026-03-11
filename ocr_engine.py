@@ -27,7 +27,14 @@ class ImageDecoder:
             if bin_path.exists():
                 import os
                 os.add_dll_directory(str(bin_path))
-            self.turbojpeg = TurboJPEG()
+                # 使用正確的 DLL 檔名 libturbojpeg.dll
+                lib_path = bin_path / 'libturbojpeg.dll'
+                if lib_path.exists():
+                    self.turbojpeg = TurboJPEG(lib_path=str(lib_path))
+                else:
+                    self.turbojpeg = TurboJPEG()
+            else:
+                self.turbojpeg = TurboJPEG()
         except Exception as e:
             print(f"PyTurboJPEG 初始化失敗，將使用 Pillow 作為備用: {e}")
             self.turbojpeg = None

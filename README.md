@@ -68,7 +68,7 @@ pip install -r requirements.txt
 
 ### 5. 下載 DLL 檔案（選用）
 
-將 `turbojpeg.dll` 放置於 `bin` 目錄以加速 JPEG 解碼：
+將 `libturbojpeg.dll` 放置於 `bin` 目錄以加速 JPEG 解碼：
 
 - 從 [libjpeg-turbo](https://github.com/libjpeg-turbo/libjpeg-turbo/releases) 下載
 - 或使用 conda 安裝: `conda install -c conda-forge libjpeg-turbo`
@@ -192,8 +192,8 @@ A: 確保已安裝 GPU 版本的 Ollama，並啟用 GPU 加速。也可以嘗試
 ### Q: 無法連接到 Ollama？
 A: 確保 Ollama 服務正在運行（`ollama serve`），並檢查防火牆設定。
 
-### Q: 無法載入 turbojpeg.dll？
-A: 確保 DLL 檔案位於 `bin` 目錄中，且版本與 PyTurboJPEG 匹配。如果無法載入，系統會自動使用 Pillow 作為備用。
+### Q: 無法載入 libturbojpeg.dll？
+A: 確保 DLL 檔案位於 `bin` 目錄中，且檔名為 `libturbojpeg.dll`。如果無法載入，系統會自動使用 Pillow 作為備用。
 
 ### Q: PDF 中的文字無法搜尋？
 A: 確保 OCR 識別成功，且文字層正確插入。檢查字型檔案是否正確載入。
