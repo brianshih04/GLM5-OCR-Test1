@@ -180,12 +180,8 @@ class ConversionInterface(CardWidget):
     def init_engines(self):
         """初始化 OCR 引擎和 PDF 建構器"""
         try:
-            # 初始化 OCR 引擎
-            models_dir = Path(__file__).parent / 'models'
-            model_path = models_dir / 'model.gguf'
-            mmproj_path = models_dir / 'mmproj.gguf'
-
-            self.ocr_engine = OCREngine(model_path, mmproj_path)
+            # 初始化 OCR 引擎（使用 Ollama GLM-OCR 模型）
+            self.ocr_engine = OCREngine(model_name="glm-ocr:q8_0")
 
             # 初始化 PDF 建構器
             fonts_dir = Path(__file__).parent / 'fonts'
@@ -353,12 +349,8 @@ class HotFolderInterface(CardWidget):
     def init_engines(self):
         """初始化 OCR 引擎和 PDF 建構器"""
         try:
-            # 初始化 OCR 引擎
-            models_dir = Path(__file__).parent / 'models'
-            model_path = models_dir / 'model.gguf'
-            mmproj_path = models_dir / 'mmproj.gguf'
-
-            self.ocr_engine = OCREngine(model_path, mmproj_path)
+            # 初始化 OCR 引擎（使用 Ollama GLM-OCR 模型）
+            self.ocr_engine = OCREngine(model_name="glm-ocr:q8_0")
 
             # 初始化 PDF 建構器
             fonts_dir = Path(__file__).parent / 'fonts'

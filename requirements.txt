@@ -1,0 +1,27 @@
+# AI 離線雙層 PDF 轉換服務 - 依賴套件清單
+# AI Offline Dual-Layer PDF Conversion Service - Dependencies
+
+# GUI 框架
+PyQt6>=6.6.0
+PyQt-Fluent-Widgets>=1.5.0
+
+# AI 推理引擎 - 使用 Ollama GLM-OCR
+ollama>=0.1.0
+
+# 極速影像解碼
+PyTurboJPEG>=1.7.0
+
+# 影像處理
+Pillow>=10.0.0
+
+# 資料夾監控
+watchdog>=3.0.0
+
+# PDF 引擎
+PyMuPDF>=1.23.0
+
+# 打包工具
+pyinstaller>=6.0.0
+
+# 其他工具
+numpy>=1.24.0
