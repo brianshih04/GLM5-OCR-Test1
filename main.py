@@ -12,13 +12,69 @@ from qfluentwidgets import (
     FluentWindow, NavigationItemPosition, setTheme, Theme,
     FluentIcon as FIF, PushButton, CardWidget, BodyLabel,
     SubtitleLabel, StrongBodyLabel, InfoBar, InfoBarPosition,
-    ProgressBar, ComboBox, LineEdit, SwitchButton, FileEdit
+    ProgressBar, ComboBox, LineEdit, SwitchButton
 )
-from qfluentwidgets import FluentIcon
 
 from folder_watcher import FolderWatcher
 from ocr_engine import OCREngine
 from pdf_builder import PDFBuilder
+
+
+# 預設設定
+DEFAULT_MODEL_NAME = "glm-ocr:q8_0"
+DEFAULT_FONT_NAME = "NotoSansTC.ttf"
+
+
+def get_default_font_path() -> Path:
+    """取得預設字型路徑"""
+    fonts_dir = Path(__file__).parent / 'fonts'
+    return fonts_dir / DEFAULT_FONT_NAME
+
+
+def validate_font_path(font_path: Path) -> bool:
+    """驗證字型檔案是否存在"""
+    if not font_path.exists():
+        # 嘗試查找任何可用的 TTF 字型
+        fonts_dir = Path(__file__).parent / 'fonts'
+        if fonts_dir.exists():
+            for ttf_file in fonts_dir.glob('*.ttf'):
+                return True
+        return False
+    return True
+
+
+def init_ocr_and_pdf_engines(model_name: str = DEFAULT_MODEL_NAME, font_path: Path = None):
+    """
+    初始化 OCR 引擎和 PDF 建構器
+    
+    Args:
+        model_name: Ollama 模型名稱
+        font_path: 字型檔案路徑
+        
+    Returns:
+        (ocr_engine, pdf_builder) 或 (None, None) 如果初始化失敗
+    """
+    try:
+        # 使用預設字型路徑（如果未指定）
+        if font_path is None:
+            font_path = get_default_font_path()
+        
+        # 驗證字型路徑
+        if not validate_font_path(font_path):
+            print(f"警告：找不到字型檔案，將使用系統預設字型")
+            font_path = None
+        
+        # 初始化 OCR 引擎
+        ocr_engine = OCREngine(model_name=model_name)
+        
+        # 初始化 PDF 建構器
+        pdf_builder = PDFBuilder(font_path)
+        
+        return ocr_engine, pdf_builder
+        
+    except Exception as e:
+        print(f"引擎初始化失敗: {e}")
+        return None, None
 
 
 class ConversionThread(QThread):
@@ -179,20 +235,12 @@ class ConversionInterface(CardWidget):
 
     def init_engines(self):
         """初始化 OCR 引擎和 PDF 建構器"""
-        try:
-            # 初始化 OCR 引擎（使用 Ollama GLM-OCR 模型）
-            self.ocr_engine = OCREngine(model_name="glm-ocr:q8_0")
-
-            # 初始化 PDF 建構器
-            fonts_dir = Path(__file__).parent / 'fonts'
-            font_path = fonts_dir / 'NotoSansTC.ttf'
-
-            self.pdf_builder = PDFBuilder(font_path)
-
-        except Exception as e:
+        self.ocr_engine, self.pdf_builder = init_ocr_and_pdf_engines()
+        
+        if self.ocr_engine is None:
             InfoBar.error(
                 title="初始化失敗",
-                content=str(e),
+                content="OCR 引擎初始化失敗，請檢查 Ollama 服務和模型",
                 parent=self.parent_window,
                 position=InfoBarPosition.TOP
             )
@@ -348,20 +396,12 @@ class HotFolderInterface(CardWidget):
 
     def init_engines(self):
         """初始化 OCR 引擎和 PDF 建構器"""
-        try:
-            # 初始化 OCR 引擎（使用 Ollama GLM-OCR 模型）
-            self.ocr_engine = OCREngine(model_name="glm-ocr:q8_0")
-
-            # 初始化 PDF 建構器
-            fonts_dir = Path(__file__).parent / 'fonts'
-            font_path = fonts_dir / 'NotoSansTC.ttf'
-
-            self.pdf_builder = PDFBuilder(font_path)
-
-        except Exception as e:
+        self.ocr_engine, self.pdf_builder = init_ocr_and_pdf_engines()
+        
+        if self.ocr_engine is None:
             InfoBar.error(
                 title="初始化失敗",
-                content=str(e),
+                content="OCR 引擎初始化失敗，請檢查 Ollama 服務和模型",
                 parent=self.parent_window,
                 position=InfoBarPosition.TOP
             )

@@ -6,6 +6,7 @@ PDF Builder Module - Generate Dual-Layer Searchable PDF
 from pathlib import Path
 from typing import Optional, List, Tuple
 import fitz  # PyMuPDF
+from PIL import Image
 
 
 class PDFBuilder:
@@ -74,22 +75,30 @@ class PDFBuilder:
             print(f"PDF 建構失敗: {e}")
             return False
 
-    def _get_image_dimensions(self, image_path: Path) -> Tuple[float, float]:
+    def _get_image_dimensions(self, image_path: Path, assumed_dpi: int = 150) -> Tuple[float, float]:
         """
         取得影像尺寸
         
         Args:
             image_path: 影像路徑
+            assumed_dpi: 假設的原始影像 DPI
             
         Returns:
             (width, height) 單位為點（72 DPI）
         """
         try:
-            from PIL import Image
             with Image.open(image_path) as img:
-                # 將像素轉換為點（假設 72 DPI）
-                width_pt = img.width * 72 / 150  # 假設原始影像為 150 DPI
-                height_pt = img.height * 72 / 150
+                # 嘗試從 EXIF 讀取 DPI，如果失敗則使用預設值
+                try:
+                    dpi = img.info.get('dpi', (assumed_dpi, assumed_dpi))
+                    x_dpi = dpi[0] if dpi[0] > 0 else assumed_dpi
+                    y_dpi = dpi[1] if dpi[1] > 0 else assumed_dpi
+                except (KeyError, TypeError, IndexError):
+                    x_dpi = y_dpi = assumed_dpi
+                
+                # 將像素轉換為點（PDF 使用 72 DPI）
+                width_pt = img.width * 72 / x_dpi
+                height_pt = img.height * 72 / y_dpi
                 return width_pt, height_pt
         except Exception as e:
             print(f"無法取得影像尺寸: {e}")
@@ -110,7 +119,8 @@ class PDFBuilder:
         except Exception as e:
             print(f"插入影像層失敗: {e}")
 
-    def _insert_text_layer(self, page: fitz.Page, ocr_text: str, dpi: int):
+    def _insert_text_layer(self, page: fitz.Page, ocr_text: str, dpi: int = 150, 
+                           font_size: float = 10, line_spacing: float = 1.5):
         """
         插入文字層（透明文字）
         
@@ -118,11 +128,12 @@ class PDFBuilder:
             page: PyMuPDF 頁面物件
             ocr_text: OCR 識別的文字
             dpi: 影像 DPI
+            font_size: 字體大小
+            line_spacing: 行距倍數
         """
         try:
-            # 設定文字樣式
-            font_size = 10
-            line_height = font_size * 1.5
+            # 計算行高
+            line_height = font_size * line_spacing
             
             # 選擇字型
             if self.font_path:
@@ -130,21 +141,44 @@ class PDFBuilder:
             else:
                 fontname = "helv"  # 使用內建字型
             
-            # 設定文字顏色為透明（alpha=0）
-            text_color = (0, 0, 0, 0)  # RGBA
+            # 設定文字顏色為近乎透明（便於搜尋但幾乎不可見）
+            text_color = (0, 0, 0, 0.01)  # 非常淡的黑色
             
             # 將文字分為多行
             lines = ocr_text.split('\n')
             
-            # 計算起始位置
-            y_pos = page.rect.height - 50  # 從上方開始
-            x_pos = 50  # 左邊距
+            # 頁面邊距
+            margin = 50
+            
+            # 計算可用寬度
+            available_width = page.rect.width - 2 * margin
+            
+            # 估算每行最大字數（粗略估算，中文約為字體大小的 1.5 倍）
+            max_chars_per_line = int(available_width / (font_size * 0.6))
+            
+            # 包裝長行文字
+            wrapped_lines = []
+            for line in lines:
+                if len(line) > max_chars_per_line:
+                    # 簡單的按字數換行
+                    for i in range(0, len(line), max_chars_per_line):
+                        wrapped_lines.append(line[i:i + max_chars_per_line])
+                else:
+                    wrapped_lines.append(line)
+            
+            # 計算起始位置（從頁面頂部開始，PDF 座標系原點在左下角）
+            y_pos = page.rect.height - margin  # 從上方開始
+            x_pos = margin  # 左邊距
             
             # 插入每一行文字
-            for line in lines:
+            for line in wrapped_lines:
                 if not line.strip():
                     y_pos -= line_height
                     continue
+                
+                # 檢查是否超出頁面底部
+                if y_pos < margin:
+                    break
                 
                 # 插入文字
                 point = fitz.Point(x_pos, y_pos)
@@ -157,10 +191,6 @@ class PDFBuilder:
                 )
                 
                 y_pos -= line_height
-                
-                # 檢查是否超出頁面底部
-                if y_pos < 50:
-                    break
 
         except Exception as e:
             print(f"插入文字層失敗: {e}")
